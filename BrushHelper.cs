@@ -6,9 +6,9 @@
 
 	#endregion
 
-	public static class CircleBrushHelper
+	public static class BrushHelper
 	{
-		public static IEnumerable<Vector2Int> GetPoints(Vector2Int position, int brushSize)
+		public static IEnumerable<Vector2Int> GetPointsInCircle(Vector2Int position, int brushSize)
 		{
 			foreach (var offset in GenerateOffsetsCircle(brushSize))
 			{

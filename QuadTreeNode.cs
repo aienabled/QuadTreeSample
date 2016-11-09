@@ -5,6 +5,8 @@
 	using System;
 	using System.Collections;
 	using System.Collections.Generic;
+	using System.Diagnostics;
+	using System.Runtime.CompilerServices;
 
 	#endregion
 
@@ -15,9 +17,9 @@
 	/// <summary>
 	/// Spatial/sparse quad tree implementation for C#.
 	/// This data structure optimizes storage of big condensed filled areas.
-	/// It's suboptimal for storing very sparse unique data as overhead of having multiple subnodes is quite high.
+	/// It's suboptimal for storing very sparse non-condensed data as overhead of having multiple subnodes is quite high.
 	/// It works similar to https://www.youtube.com/watch?v=NfjybO2PIq0 except it uses lazy initialization for subnodes.
-	/// Made by Vladimir Kozlov, AtomicTorch Studio http://atomictorch.com
+	/// Coding: Vladimir Kozlov, AtomicTorch Studio http://atomictorch.com
 	/// </summary>
 	public class QuadTreeNode : IEnumerable<Vector2Int>
 	{
@@ -34,7 +36,7 @@
 		public readonly Vector2Int Size;
 
 		/// <summary>
-		/// Determines if the node is completely filled or not.
+		/// Determines if the node itself is filled or not. If node contains any subnodes it mush not be filled.
 		/// </summary>
 		private bool isFilled;
 
@@ -47,6 +49,11 @@
 			this.Position = position;
 			this.Size = size;
 		}
+
+		/// <summary>
+		/// Returns true if the node is completely filled.
+		/// </summary>
+		public bool IsFilled => this.isFilled;
 
 		/// <summary>
 		/// Gets sub-nodes array - please note that QuadTreeNode uses lazy initialization,
@@ -79,23 +86,25 @@
 			}
 		}
 
-		public IEnumerator<Vector2Int> GetEnumerator()
+		/// <summary>
+		/// Adds all stored positions in this quad tree node (and its subnodes) to the list.
+		/// </summary>
+		public void AddStoredPositions(IList<Vector2Int> list)
 		{
 			if (this.subNodes == null)
 			{
 				if (!this.isFilled)
 				{
 					// no position(s) stored in this node
-					yield break;
+					return;
 				}
 
 				if (this.Size.X == 1
 				    && this.Size.Y == 1)
 				{
 					// single-cell quad tree node
-					yield return this.Position;
-					// enumeration done
-					yield break;
+					list.Add(this.Position);
+					return;
 				}
 
 				// calculate and return all the positions stored in this node
@@ -103,29 +112,72 @@
 				{
 					for (var y = 0; y < this.Size.Y; y++)
 					{
-						yield return new Vector2Int(this.Position.X + x, this.Position.Y + y);
+						list.Add(new Vector2Int(this.Position.X + x, this.Position.Y + y));
 					}
 				}
 
-				// enumeration done
-				yield break;
+				return;
 			}
 
-			// enumerate all the subNodes
 			for (byte index = 0; index < 4; index++)
 			{
+				// add all positions stored in the subNode
 				var subNode = this.subNodes[index];
-				if (subNode == null)
+				subNode?.AddStoredPositions(list);
+			}
+		}
+
+		public IEnumerator<Vector2Int> GetEnumerator()
+		{
+			// we will not actually enumerate as it's very memory consuming (high overhead due to creation enumerators)
+			// instead we will create a new list and fill all stored positions there recursively
+
+			// TODO: it's better to use higher initial list capacity to avoid resizing of the inner array
+			var list = new List<Vector2Int>(capacity: 100);
+			this.AddStoredPositions(list);
+			return list.GetEnumerator();
+		}
+
+		public void ResetFilledPosition(Vector2Int position)
+		{
+			if (this.Size.X == 1
+			    && this.Size.Y == 1)
+			{
+				Debug.Assert(this.Position == position);
+				this.isFilled = false;
+				return;
+			}
+
+			if (this.subNodes == null)
+			{
+				if (!this.isFilled)
 				{
-					continue;
+					// no subnodes exists and this node is not filled, so nothing to reset
+					return;
 				}
 
-				// enumerate all positions stored in the subNode
-				foreach (var position in subNode)
+				// need to split this filled node on the filled subnodes
+				this.isFilled = false;
+				this.subNodes = new QuadTreeNode[4];
+				for (byte index = 0; index < 4; index++)
 				{
-					yield return position;
+					var node = this.CreateNode(index);
+					node.isFilled = true;
+					this.subNodes[index] = node;
 				}
 			}
+
+			// find subnode
+			var subNode = this.subNodes[this.CalculateNodeIndex(position)];
+			if (subNode == null)
+			{
+				// not subnode exists - nothing to reset
+				return;
+			}
+
+			subNode.ResetFilledPosition(position);
+
+			this.TryConsolidateOnReset();
 		}
 
 		public void SetFilledPosition(Vector2Int position)
@@ -138,12 +190,13 @@
 			if (this.Size.X == 1
 			    && this.Size.Y == 1)
 			{
+				Debug.Assert(this.Position == position);
 				this.isFilled = true;
 				return;
 			}
 
-			// find and create node
-			var nodeIndex = this.CalculateNodeIndex(position);
+			// find subnode
+			var subNodeIndex = this.CalculateNodeIndex(position);
 
 			// Optimization: this flag determines if we need to check subnodes for consolidation:
 			// when all the subnodes are "filled" they must be consolidated into a single node (this node).
@@ -160,18 +213,18 @@
 				checkSubnodesForConsolidation = true;
 			}
 
-			var subNode = this.subNodes[nodeIndex];
+			var subNode = this.subNodes[subNodeIndex];
 			if (subNode == null)
 			{
-				subNode = this.CreateNode(nodeIndex);
-				this.subNodes[nodeIndex] = subNode;
+				subNode = this.CreateNode(subNodeIndex);
+				this.subNodes[subNodeIndex] = subNode;
 			}
 
 			subNode.SetFilledPosition(position);
 
 			if (checkSubnodesForConsolidation)
 			{
-				this.TryConsolidate();
+				this.TryConsolidateOnSet();
 			}
 		}
 
@@ -207,6 +260,7 @@
 		/// <summary>
 		/// Creates node for according subNodeIndex.
 		/// </summary>
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		private QuadTreeNode CreateNode(byte subNodeIndex)
 		{
 			var x = this.Position.X;
@@ -235,9 +289,29 @@
 			}
 		}
 
-		private void TryConsolidate()
+		private void TryConsolidateOnReset()
 		{
-// check if all the nodes are filled now
+			// it doesn't make sense calling this method for filled node as it's already "consolidated"
+			Debug.Assert(!this.isFilled);
+
+			// check if all the nodes are not filled now
+			for (byte i = 0; i < 4; i++)
+			{
+				var n = this.subNodes[i];
+				if (n != null
+				    && (n.subNodes != null || n.isFilled))
+				{
+					return;
+				}
+			}
+
+			// all nodes are not filled! we can merge them
+			this.subNodes = null;
+		}
+
+		private void TryConsolidateOnSet()
+		{
+			// check if all the nodes are filled now
 			for (byte i = 0; i < 4; i++)
 			{
 				var n = this.subNodes[i];

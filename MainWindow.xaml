@@ -29,7 +29,9 @@
                     <TextBlock Text="{Binding BrushSize, ElementName=Window}" />
                 </StackPanel>
                 <TextBlock Text="Use +/- keys to change the brush size" />
-                <TextBlock Text="Use right-click to clear the screen" />
+                <TextBlock Text="Use left mouse button to draw the area" />
+                <TextBlock Text="Use right mouse button to clear the area" />
+                <TextBlock Text="Use Escape to clear the screen" />
 
                 <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
                     <TextBlock Text="Points: " />

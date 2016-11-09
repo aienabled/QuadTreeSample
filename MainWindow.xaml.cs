@@ -39,8 +39,6 @@
 
 		private readonly UIElementCollection canvasChildren;
 
-		private bool isMousePressed;
-
 		private QuadTreeNode quadTreeRoot;
 
 		public MainWindow()
@@ -50,11 +48,10 @@
 			this.canvasChildren = this.CanvasControl.Children;
 			this.CanvasControl.Width = this.CanvasControl.Height = CanvasSize;
 
-			this.MouseLeftButtonDown += this.MouseLeftButtonDownHandler;
-			this.MouseLeftButtonUp += this.MouseLeftButtonUpHandler;
-			this.MouseRightButtonDown += this.MouseRightButtonDownHandler;
+			this.MouseLeftButtonDown += this.MouseButtonDownHandler;
+			this.MouseRightButtonDown += this.MouseButtonDownHandler;
 			this.MouseMove += this.MouseMoveHandler;
-			this.KeyDown += this.MainWindow_KeyDown;
+			this.KeyDown += this.KeyDownHandler;
 
 			this.CreateQuadTree();
 		}
@@ -135,16 +132,30 @@
 
 		private void DrawAtPosition(Vector2Int position)
 		{
-			foreach (var point in CircleBrushHelper.GetPoints(position, this.BrushSize))
+			var isFill = Mouse.LeftButton == MouseButtonState.Pressed;
+			foreach (var point in BrushHelper.GetPointsInCircle(position, this.BrushSize))
 			{
-				this.quadTreeRoot.SetFilledPosition(point);
+				if (isFill)
+				{
+					this.quadTreeRoot.SetFilledPosition(point);
+				}
+				else
+				{
+					this.quadTreeRoot.ResetFilledPosition(point);
+				}
 			}
 
 			this.RebuildVisualization();
 		}
 
-		private void MainWindow_KeyDown(object sender, KeyEventArgs e)
+		private void KeyDownHandler(object sender, KeyEventArgs e)
 		{
+			if (e.Key == Key.Escape)
+			{
+				this.Clear();
+				return;
+			}
+
 			var brushSize = this.BrushSize;
 			switch (e.Key)
 			{
@@ -168,21 +179,22 @@
 			this.BrushSize = brushSize;
 		}
 
-		private void MouseLeftButtonDownHandler(object sender, MouseButtonEventArgs e)
+		private void Clear()
 		{
-			this.isMousePressed = true;
+			this.CreateQuadTree();
+			this.RebuildVisualization();
+		}
+
+		private void MouseButtonDownHandler(object sender, MouseButtonEventArgs e)
+		{
 			var position = e.GetPosition(this.CanvasControl);
 			this.DrawAtPosition(new Vector2Int(position));
 		}
 
-		private void MouseLeftButtonUpHandler(object sender, MouseButtonEventArgs e)
-		{
-			this.isMousePressed = false;
-		}
-
 		private void MouseMoveHandler(object sender, MouseEventArgs e)
 		{
-			if (!this.isMousePressed)
+			if (Mouse.LeftButton != MouseButtonState.Pressed
+			    && Mouse.RightButton != MouseButtonState.Pressed)
 			{
 				return;
 			}
@@ -191,12 +203,7 @@
 			this.DrawAtPosition(new Vector2Int(position));
 		}
 
-		private void MouseRightButtonDownHandler(object sender, MouseButtonEventArgs e)
-		{
-			this.CreateQuadTree();
-			this.RebuildVisualization();
-		}
-
+	
 		private void RebuildVisualization()
 		{
 			this.canvasChildren.Clear();
