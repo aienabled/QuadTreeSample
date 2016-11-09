@@ -1,0 +1,13 @@
+﻿<Window x:Class="QuadTreeSample.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="700" Width="900" WindowStartupLocation="CenterScreen">
+    <Canvas HorizontalAlignment="Stretch" VerticalAlignment="Stretch" x:Name="CanvasControl" Background="Transparent">
+        <Canvas.RenderTransform>
+            <ScaleTransform ScaleX="8" ScaleY="8" />
+        </Canvas.RenderTransform>
+    </Canvas>
+</Window>
