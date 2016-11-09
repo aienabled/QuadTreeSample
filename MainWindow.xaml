@@ -4,10 +4,43 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="MainWindow" Height="700" Width="900" WindowStartupLocation="CenterScreen">
-    <Canvas HorizontalAlignment="Stretch" VerticalAlignment="Stretch" x:Name="CanvasControl" Background="Transparent">
-        <Canvas.RenderTransform>
-            <ScaleTransform ScaleX="8" ScaleY="8" />
-        </Canvas.RenderTransform>
-    </Canvas>
+        x:Name="Window"
+        Title="QuadTree Sample" Height="700" Width="900" WindowStartupLocation="CenterScreen">
+    <Grid Background="Beige">
+        <!-- Canvas for adding points and quads rectangles -->
+        <Canvas
+            x:Name="CanvasControl"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Background="White">
+            <Canvas.LayoutTransform>
+                <ScaleTransform
+                    ScaleX="{Binding CanvasScale, ElementName=Window}"
+                    ScaleY="{Binding CanvasScale, ElementName=Window}" />
+            </Canvas.LayoutTransform>
+        </Canvas>
+
+        <!-- Stats -->
+        <Border Background="#FFCCCCCC" HorizontalAlignment="Left" VerticalAlignment="Top" IsHitTestVisible="False"
+                Padding="5" Margin="5" CornerRadius="3">
+            <StackPanel Orientation="Vertical" MinWidth="60" MinHeight="20">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Brush size: " />
+                    <TextBlock Text="{Binding BrushSize, ElementName=Window}" />
+                </StackPanel>
+                <TextBlock Text="Use +/- keys to change the brush size" />
+                <TextBlock Text="Use right-click to clear the screen" />
+
+                <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
+                    <TextBlock Text="Points: " />
+                    <TextBlock Text="{Binding StatsPointsCount, ElementName=Window}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="QuadTree nodes: " />
+                    <TextBlock Text="{Binding StatsQuadTreeNodesCount, ElementName=Window}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+
 </Window>

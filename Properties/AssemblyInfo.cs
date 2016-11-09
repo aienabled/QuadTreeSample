@@ -10,7 +10,7 @@ using System.Windows;
 [assembly: AssemblyTitle("QuadTreeSample")]
 [assembly: AssemblyDescription("")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
+[assembly: AssemblyCompany("AtomicTorch Studio")]
 [assembly: AssemblyProduct("QuadTreeSample")]
 [assembly: AssemblyCopyright("Copyright ©  2016")]
 [assembly: AssemblyTrademark("")]

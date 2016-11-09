@@ -22,6 +22,11 @@
 		{
 		}
 
+		public static Vector2Int operator +(Vector2Int a, Vector2Int b)
+		{
+			return new Vector2Int(a.X + b.X, a.Y + b.Y);
+		}
+
 		public override string ToString()
 		{
 			return $"{this.X};{this.Y}";
