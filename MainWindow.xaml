@@ -31,7 +31,9 @@
                 <TextBlock Text="Use +/- keys to change the brush size" />
                 <TextBlock Text="Use left mouse button to draw the area" />
                 <TextBlock Text="Use right mouse button to clear the area" />
-                <TextBlock Text="Use Escape to clear the screen" />
+                <TextBlock Text="Press S to Save the quadtree" />
+                <TextBlock Text="Press L to Load the quadtree" />
+                <TextBlock Text="Press Escape to clear the screen" />
 
                 <StackPanel Orientation="Horizontal" Margin="0,5,0,0">
                     <TextBlock Text="Points: " />

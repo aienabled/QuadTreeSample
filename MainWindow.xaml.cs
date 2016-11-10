@@ -2,6 +2,7 @@
 {
 	#region
 
+	using System.Collections.Generic;
 	using System.Windows;
 	using System.Windows.Controls;
 	using System.Windows.Input;
@@ -15,7 +16,7 @@
 	/// </summary>
 	public partial class MainWindow : Window
 	{
-		public const int CanvasSize = 128;
+		public const ushort CanvasSize = 128;
 
 		private const int DefaultBrushSize = 5;
 
@@ -38,6 +39,9 @@
 			DependencyProperty.Register("CanvasScale", typeof(int), typeof(MainWindow), new PropertyMetadata(DefaultCanvasScale));
 
 		private readonly UIElementCollection canvasChildren;
+
+		private readonly List<QuadTreeNode.QuadTreeNodeSnapshot> quadTreeSnapshots =
+			new List<QuadTreeNode.QuadTreeNodeSnapshot>();
 
 		private QuadTreeNode quadTreeRoot;
 
@@ -80,9 +84,15 @@
 			set { this.SetValue(StatsQuadTreeNodesCountProperty, value); }
 		}
 
+		private void Clear()
+		{
+			this.CreateQuadTree();
+			this.RebuildVisualization();
+		}
+
 		private void CreateQuadTree()
 		{
-			this.quadTreeRoot = new QuadTreeNode(new Vector2Int(0, 0), new Vector2Int(CanvasSize, CanvasSize));
+			this.quadTreeRoot = new QuadTreeNode(new Vector2Int(0, 0), CanvasSize);
 		}
 
 		private void CreateVisualizationForPoint(Vector2Int position)
@@ -106,8 +116,8 @@
 			{
 				Stroke = Brushes.Black,
 				StrokeThickness = 0.08,
-				Width = node.Size.X,
-				Height = node.Size.Y,
+				Width = node.Size,
+				Height = node.Size,
 				IsHitTestVisible = false
 			};
 
@@ -135,6 +145,11 @@
 			var isFill = Mouse.LeftButton == MouseButtonState.Pressed;
 			foreach (var point in BrushHelper.GetPointsInCircle(position, this.BrushSize))
 			{
+				if (!this.IsInside(point))
+				{
+					continue;
+				}
+
 				if (isFill)
 				{
 					this.quadTreeRoot.SetFilledPosition(point);
@@ -148,12 +163,32 @@
 			this.RebuildVisualization();
 		}
 
+		private bool IsInside(Vector2Int point)
+		{
+			return point.X >= 0 
+				&& point.Y >= 0 
+				&& point.X < CanvasSize 
+				&& point.Y < CanvasSize;
+		}
+
 		private void KeyDownHandler(object sender, KeyEventArgs e)
 		{
-			if (e.Key == Key.Escape)
+			switch (e.Key)
 			{
-				this.Clear();
-				return;
+				case Key.Escape:
+					this.Clear();
+					return;
+
+				case Key.S:
+					this.quadTreeSnapshots.Clear();
+					this.quadTreeRoot.Save(this.quadTreeSnapshots);
+					return;
+
+				case Key.L:
+					this.CreateQuadTree();
+					this.quadTreeRoot.Load(this.quadTreeSnapshots);
+					this.RebuildVisualization();
+					return;
 			}
 
 			var brushSize = this.BrushSize;
@@ -179,12 +214,6 @@
 			this.BrushSize = brushSize;
 		}
 
-		private void Clear()
-		{
-			this.CreateQuadTree();
-			this.RebuildVisualization();
-		}
-
 		private void MouseButtonDownHandler(object sender, MouseButtonEventArgs e)
 		{
 			var position = e.GetPosition(this.CanvasControl);
@@ -203,7 +232,6 @@
 			this.DrawAtPosition(new Vector2Int(position));
 		}
 
-	
 		private void RebuildVisualization()
 		{
 			this.canvasChildren.Clear();
