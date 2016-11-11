@@ -121,9 +121,10 @@
 				}
 
 				// calculate and return all the positions stored in this node
-				for (var x = 0; x < this.Size; x++)
+				var size = this.Size;
+				for (var x = 0; x < size; x++)
 				{
-					for (var y = 0; y < this.Size; y++)
+					for (var y = 0; y < size; y++)
 					{
 						list.Add(new Vector2Int(this.Position.X + x, this.Position.Y + y));
 					}
@@ -142,8 +143,8 @@
 
 		public IEnumerator<Vector2Int> GetEnumerator()
 		{
-			// we will not actually enumerate as it's very memory consuming (high overhead due to creation of enumerators)
-			// instead we will create a new list and fill all stored positions there recursively
+			// Цe will not actually enumerate as it's very memory consuming (high overhead due to creation of enumerators).
+			// Instead we will create a new list and fill all the stored positions there recursively.
 
 			// TODO: it's better to use higher initial list capacity to avoid resizing of the inner array
 			var list = new List<Vector2Int>(capacity: 100);
@@ -168,11 +169,14 @@
 			return subNode != null && subNode.IsPositionFilled(position);
 		}
 
+		/// <summary>
+		/// Load (additive).
+		/// </summary>
 		public void Load(IReadOnlyList<QuadTreeNodeSnapshot> snapshots)
 		{
 			foreach (var snapshot in snapshots)
 			{
-				this.SetFilledPosition(snapshot.Position, snapshot.Size);
+				this.SetFilledPosition(snapshot.Position, snapshot.SizePowerOfTwo);
 			}
 		}
 
@@ -228,7 +232,7 @@
 		{
 			if (this.isFilled)
 			{
-				snapshots.Add(new QuadTreeNodeSnapshot(this.Position, this.Size));
+				snapshots.Add(new QuadTreeNodeSnapshot(this.Position, this.SizePowerOfTwo));
 			}
 			else if (this.subNodes != null)
 			{
@@ -368,14 +372,14 @@
 			return subNode;
 		}
 
-		private void SetFilledPosition(Vector2Int position, ushort size)
+		private void SetFilledPosition(Vector2Int position, byte sizePowerOfTwo)
 		{
 			if (this.isFilled)
 			{
 				return;
 			}
 
-			if (this.Size == size)
+			if (this.SizePowerOfTwo == sizePowerOfTwo)
 			{
 				Debug.Assert(this.Position == position);
 				if (this.isFilled)
@@ -396,7 +400,7 @@
 
 			bool checkSubnodesForConsolidation;
 			var subNode = this.GetOrCreateSubNode(position, out checkSubnodesForConsolidation);
-			subNode.SetFilledPosition(position, size);
+			subNode.SetFilledPosition(position, sizePowerOfTwo);
 
 			if (checkSubnodesForConsolidation)
 			{
@@ -464,17 +468,17 @@
 		{
 			public readonly Vector2Int Position;
 
-			public readonly ushort Size;
+			public readonly byte SizePowerOfTwo;
 
-			public QuadTreeNodeSnapshot(Vector2Int position, ushort size)
+			public QuadTreeNodeSnapshot(Vector2Int position, byte sizePowerOfTwo)
 			{
 				this.Position = position;
-				this.Size = size;
+				this.SizePowerOfTwo = sizePowerOfTwo;
 			}
 
 			public bool Equals(QuadTreeNodeSnapshot other)
 			{
-				return this.Position.Equals(other.Position) && this.Size.Equals(other.Size);
+				return this.Position.Equals(other.Position) && this.SizePowerOfTwo.Equals(other.SizePowerOfTwo);
 			}
 
 			public override bool Equals(object obj)
@@ -491,7 +495,7 @@
 			{
 				unchecked
 				{
-					return (this.Position.GetHashCode() * 397) ^ this.Size.GetHashCode();
+					return (this.Position.GetHashCode() * 397) ^ this.SizePowerOfTwo.GetHashCode();
 				}
 			}
 		}
