@@ -126,14 +126,9 @@
 			Canvas.SetLeft(rectangle, node.Position.X);
 			Canvas.SetTop(rectangle, node.Position.Y);
 
-			if (node.SubNodes == null)
+			for (byte subNodeIndex = 0; subNodeIndex < 4; subNodeIndex++)
 			{
-				return;
-			}
-
-			for (var index = 0; index < 4; index++)
-			{
-				var subNode = node.SubNodes[index];
+				var subNode = node.GetSubNode((QuadTreeNode.SubNodeIndex)subNodeIndex);
 				if (subNode != null)
 				{
 					this.CreateVisualizationForQuadRecursive(subNode);

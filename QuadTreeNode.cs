@@ -17,26 +17,19 @@
 	/// It works similar to https://www.youtube.com/watch?v=NfjybO2PIq0 except it uses lazy initialization for subnodes.
 	/// Coding: Vladimir Kozlov, AtomicTorch Studio http://atomictorch.com
 	/// </summary>
-	public class QuadTreeNode : IEnumerable<Vector2Int>
+	public sealed class QuadTreeNode : IEnumerable<Vector2Int>
 	{
-		private const int IndexBottomLeft = 0;
-
-		private const int IndexBottomRight = 1;
-
-		private const int IndexTopLeft = 2;
-
-		private const int IndexTopRight = 3;
-
 		public readonly Vector2Int Position;
 
-		public readonly byte SizePowerOfTwo;
+		private readonly byte sizePowerOfTwo;
 
-		/// <summary>
-		/// Determines if the node itself is filled or not. If node contains any subnodes it must not be filled.
-		/// </summary>
-		private bool isFilled;
+		private QuadTreeNode subNodeBottomLeft;
 
-		private QuadTreeNode[] subNodes;
+		private QuadTreeNode subNodeBottomRight;
+
+		private QuadTreeNode subNodeTopLeft;
+
+		private QuadTreeNode subNodeTopRight;
 
 		/// <param name="position">QuadTreeNode start position</param>
 		/// <param name="size">Size (will be rounded up to power of two; for example: 50->64, 200->256, 500->512, etc)</param>
@@ -49,9 +42,8 @@
 
 			this.Position = position;
 			var canvasSizeRoundedUp = RoundUpToPowerOfTwo(size);
-			// calculate what power of two is it (take logarithm with base=2)
-			var sizePowerOfTwo = (byte)Math.Log(canvasSizeRoundedUp, 2);
-			this.SizePowerOfTwo = sizePowerOfTwo;
+			// calculate what the power of two corresponds to this size (take logarithm with base==2)
+			this.sizePowerOfTwo = (byte)Math.Log(canvasSizeRoundedUp, 2);
 		}
 
 		/// <param name="position">QuadTreeNode start position</param>
@@ -59,41 +51,52 @@
 		private QuadTreeNode(Vector2Int position, byte sizePowerOfTwo)
 		{
 			this.Position = position;
-			this.SizePowerOfTwo = sizePowerOfTwo;
+			this.sizePowerOfTwo = sizePowerOfTwo;
+		}
+
+		public enum SubNodeIndex : byte
+		{
+			BottomLeft = 0,
+
+			BottomRight = 1,
+
+			TopLeft = 2,
+
+			TopRight = 3
+		}
+
+		public bool HasSubNodes
+		{
+			[MethodImpl(MethodImplOptions.AggressiveInlining)]
+			get
+			{
+				return !this.IsFilled
+				       && (this.subNodeBottomLeft != null
+				           || this.subNodeBottomRight != null
+				           || this.subNodeTopLeft != null
+				           || this.subNodeTopRight != null);
+			}
 		}
 
 		/// <summary>
-		/// Returns true if the node is completely filled.
+		/// Returns true if the node is completely filled. If the node is filled, it cannot contain nodes.
 		/// </summary>
-		public bool IsFilled => this.isFilled;
+		public bool IsFilled { get; private set; }
 
-		public ushort Size => (ushort)(1 << this.SizePowerOfTwo);
-
-		/// <summary>
-		/// Gets sub-nodes array - please note that QuadTreeNode uses lazy initialization,
-		/// so the returned array could be null or any of it elements could be null.
-		/// </summary>
-		public QuadTreeNode[] SubNodes => this.subNodes;
+		public ushort Size => (ushort)(1 << this.sizePowerOfTwo);
 
 		public int SubNodesCount
 		{
 			get
 			{
-				if (this.subNodes == null)
-				{
-					return 0;
-				}
-
 				var result = 0;
-				for (var index = 0; index < 4; index++)
+				for (byte subNodeIndex = 0; subNodeIndex < 4; subNodeIndex++)
 				{
-					var subNode = this.subNodes[index];
-					if (subNode == null)
+					var subNode = this.GetSubNode((SubNodeIndex)subNodeIndex);
+					if (subNode != null)
 					{
-						continue;
+						result += 1 + subNode.SubNodesCount;
 					}
-
-					result += 1 + subNode.SubNodesCount;
 				}
 
 				return result;
@@ -105,21 +108,16 @@
 		/// </summary>
 		public void AddStoredPositions(IList<Vector2Int> list)
 		{
-			if (this.subNodes == null)
+			if (this.sizePowerOfTwo == 0)
 			{
-				if (!this.isFilled)
-				{
-					// no position(s) stored in this node
-					return;
-				}
+				// single-cell quad tree node - add self position
+				list.Add(this.Position);
+				return;
+			}
 
-				if (this.SizePowerOfTwo == 0)
-				{
-					// single-cell quad tree node
-					list.Add(this.Position);
-					return;
-				}
-
+			if (this.IsFilled)
+			{
+				// filled node cannot have subnodes
 				// calculate and return all the positions stored in this node
 				var size = this.Size;
 				for (var x = 0; x < size; x++)
@@ -133,10 +131,10 @@
 				return;
 			}
 
-			for (byte index = 0; index < 4; index++)
+			for (byte subNodeIndex = 0; subNodeIndex < 4; subNodeIndex++)
 			{
 				// add all positions stored in the subNode
-				var subNode = this.subNodes[index];
+				var subNode = this.GetSubNode((SubNodeIndex)subNodeIndex);
 				subNode?.AddStoredPositions(list);
 			}
 		}
@@ -152,6 +150,29 @@
 			return list.GetEnumerator();
 		}
 
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		public QuadTreeNode GetSubNode(SubNodeIndex subNodeIndex)
+		{
+			switch (subNodeIndex)
+			{
+				case SubNodeIndex.BottomLeft:
+					return this.subNodeBottomLeft;
+
+				case SubNodeIndex.BottomRight:
+					return this.subNodeBottomRight;
+
+				case SubNodeIndex.TopLeft:
+					return this.subNodeTopLeft;
+
+				case SubNodeIndex.TopRight:
+					return this.subNodeTopRight;
+
+				default:
+					throw new ArgumentOutOfRangeException(nameof(subNodeIndex), subNodeIndex, null);
+			}
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		public bool IsPositionFilled(Vector2Int position)
 		{
 			Debug.Assert(position.X >= this.Position.X);
@@ -159,13 +180,13 @@
 			Debug.Assert(position.X < this.Position.X + this.Size);
 			Debug.Assert(position.Y < this.Position.Y + this.Size);
 
-			if (this.subNodes == null)
+			if (!this.HasSubNodes)
 			{
-				return this.isFilled;
+				return this.IsFilled;
 			}
 
 			var subNodeIndex = this.CalculateNodeIndex(position);
-			var subNode = this.subNodes[subNodeIndex];
+			var subNode = this.GetSubNode(subNodeIndex);
 			return subNode != null && subNode.IsPositionFilled(position);
 		}
 
@@ -182,35 +203,33 @@
 
 		public void ResetFilledPosition(Vector2Int position)
 		{
-			if (this.SizePowerOfTwo == 0)
+			if (this.sizePowerOfTwo == 0)
 			{
 				Debug.Assert(this.Position == position);
-				this.isFilled = false;
+				this.IsFilled = false;
 				return;
 			}
 
-			if (this.subNodes == null)
+			if (!this.HasSubNodes)
 			{
-				if (!this.isFilled)
+				if (!this.IsFilled)
 				{
 					// no subnodes exists and this node is not filled, so nothing to reset
 					return;
 				}
 
 				// need to split this filled node on the filled subnodes
-				this.isFilled = false;
-				this.subNodes = new QuadTreeNode[4];
+				this.IsFilled = false;
 				for (byte index = 0; index < 4; index++)
 				{
-					var node = this.CreateNode(index);
-					node.isFilled = true;
-					this.subNodes[index] = node;
+					var node = this.CreateAndSetNode((SubNodeIndex)index);
+					node.IsFilled = true;
 				}
 			}
 
 			// find subnode
 			var subNodeIndex = this.CalculateNodeIndex(position);
-			var subNode = this.subNodes[subNodeIndex];
+			var subNode = this.GetSubNode(subNodeIndex);
 			if (subNode == null)
 			{
 				// not subnode exists - nothing to reset
@@ -230,41 +249,36 @@
 
 		public void Save(IList<QuadTreeNodeSnapshot> snapshots)
 		{
-			if (this.isFilled)
+			if (this.IsFilled)
 			{
-				snapshots.Add(new QuadTreeNodeSnapshot(this.Position, this.SizePowerOfTwo));
+				snapshots.Add(new QuadTreeNodeSnapshot(this.Position, this.sizePowerOfTwo));
 			}
-			else if (this.subNodes != null)
+			else
 			{
-				foreach (var subNode in this.subNodes)
-				{
-					subNode?.Save(snapshots);
-				}
+				this.subNodeBottomLeft?.Save(snapshots);
+				this.subNodeBottomRight?.Save(snapshots);
+				this.subNodeTopLeft?.Save(snapshots);
+				this.subNodeTopRight?.Save(snapshots);
 			}
 		}
 
 		public void SetFilledPosition(Vector2Int position)
 		{
-			if (this.isFilled)
+			if (this.IsFilled)
 			{
 				return;
 			}
 
-			if (this.SizePowerOfTwo == 0)
+			if (this.sizePowerOfTwo == 0)
 			{
 				Debug.Assert(this.Position == position);
-				this.isFilled = true;
+				this.IsFilled = true;
 				return;
 			}
 
-			bool checkSubnodesForConsolidation;
-			var subNode = this.GetOrCreateSubNode(position, out checkSubnodesForConsolidation);
+			var subNode = this.GetOrCreateSubNode(position);
 			subNode.SetFilledPosition(position);
-
-			if (checkSubnodesForConsolidation)
-			{
-				this.TryConsolidateOnSet();
-			}
+			this.TryConsolidateOnSet();
 		}
 
 		IEnumerator IEnumerable.GetEnumerator()
@@ -286,148 +300,149 @@
 			return v;
 		}
 
-		private byte CalculateNodeIndex(Vector2Int position)
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private SubNodeIndex CalculateNodeIndex(Vector2Int position)
 		{
 			var isLeftHalf = position.X < this.Position.X + this.Size / 2;
 			var isBottomHalf = position.Y < this.Position.Y + this.Size / 2;
 
 			if (isBottomHalf)
 			{
-				if (isLeftHalf)
-				{
-					return IndexBottomLeft;
-				}
-
-				return IndexBottomRight;
+				return isLeftHalf ? SubNodeIndex.BottomLeft : SubNodeIndex.BottomRight;
 			}
 
 			// top half
-			if (isLeftHalf)
-			{
-				return IndexTopLeft;
-			}
-
-			return IndexTopRight;
+			return isLeftHalf ? SubNodeIndex.TopLeft : SubNodeIndex.TopRight;
 		}
 
 		/// <summary>
 		/// Creates node for according subNodeIndex.
 		/// </summary>
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		private QuadTreeNode CreateNode(byte subNodeIndex)
+		private QuadTreeNode CreateAndSetNode(SubNodeIndex subNodeIndex)
 		{
 			var x = this.Position.X;
 			var y = this.Position.Y;
 
 			var subSize = (ushort)(this.Size / 2);
-			var subSizePowerOfTwo = (byte)(this.SizePowerOfTwo - 1);
+			var subSizePowerOfTwo = (byte)(this.sizePowerOfTwo - 1);
 
 			switch (subNodeIndex)
 			{
-				case IndexBottomLeft:
-					return new QuadTreeNode(new Vector2Int(x, y), subSizePowerOfTwo);
+				case SubNodeIndex.BottomLeft:
+					return this.subNodeBottomLeft = new QuadTreeNode(new Vector2Int(x, y), subSizePowerOfTwo);
 
-				case IndexBottomRight:
-					return new QuadTreeNode(new Vector2Int(x + subSize, y), subSizePowerOfTwo);
+				case SubNodeIndex.BottomRight:
+					return this.subNodeBottomRight = new QuadTreeNode(new Vector2Int(x + subSize, y), subSizePowerOfTwo);
 
-				case IndexTopLeft:
-					return new QuadTreeNode(new Vector2Int(x, y + subSize), subSizePowerOfTwo);
+				case SubNodeIndex.TopLeft:
+					return this.subNodeTopLeft = new QuadTreeNode(new Vector2Int(x, y + subSize), subSizePowerOfTwo);
 
-				case IndexTopRight:
-					return new QuadTreeNode(new Vector2Int(x + subSize, y + subSize), subSizePowerOfTwo);
+				case SubNodeIndex.TopRight:
+					return this.subNodeTopRight = new QuadTreeNode(new Vector2Int(x + subSize, y + subSize), subSizePowerOfTwo);
 
 				default:
-					throw new ArgumentOutOfRangeException();
+					throw new ArgumentOutOfRangeException(nameof(subNodeIndex), subNodeIndex, null);
 			}
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private void DestroySubNode(SubNodeIndex subNodeIndex)
+		{
+			switch (subNodeIndex)
+			{
+				case SubNodeIndex.BottomLeft:
+					this.subNodeBottomLeft = null;
+					break;
+				case SubNodeIndex.BottomRight:
+					this.subNodeBottomRight = null;
+					break;
+				case SubNodeIndex.TopLeft:
+					this.subNodeTopLeft = null;
+					break;
+				case SubNodeIndex.TopRight:
+					this.subNodeTopRight = null;
+					break;
+				default:
+					throw new ArgumentOutOfRangeException(nameof(subNodeIndex), subNodeIndex, null);
+			}
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private void DestroySubNodes()
+		{
+			this.subNodeBottomLeft = null;
+			this.subNodeBottomRight = null;
+			this.subNodeTopLeft = null;
+			this.subNodeTopRight = null;
 		}
 
 		/// <param name="checkSubnodesForConsolidation">
 		/// Optimization: this flag determines if we need to check subnodes for consolidation:
 		/// </param>
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
-		private QuadTreeNode GetOrCreateSubNode(Vector2Int position, out bool checkSubnodesForConsolidation)
+		private QuadTreeNode GetOrCreateSubNode(Vector2Int position)
 		{
 			// find subnode
 			var subNodeIndex = this.CalculateNodeIndex(position);
 
-			if (this.subNodes == null)
-			{
-				// create nodes array
-				this.subNodes = new QuadTreeNode[4];
-				checkSubnodesForConsolidation = false;
-			}
-			else
-			{
-				// nodes are already created
-				checkSubnodesForConsolidation = true;
-			}
-
-			var subNode = this.subNodes[subNodeIndex];
-			if (subNode == null)
-			{
-				subNode = this.CreateNode(subNodeIndex);
-				this.subNodes[subNodeIndex] = subNode;
-			}
+			var subNode = this.GetSubNode(subNodeIndex)
+			              ?? this.CreateAndSetNode(subNodeIndex);
 
 			return subNode;
 		}
 
 		private void SetFilledPosition(Vector2Int position, byte sizePowerOfTwo)
 		{
-			if (this.isFilled)
+			if (this.IsFilled)
 			{
 				return;
 			}
 
-			if (this.SizePowerOfTwo == sizePowerOfTwo)
+			if (this.sizePowerOfTwo == sizePowerOfTwo)
 			{
 				Debug.Assert(this.Position == position);
-				if (this.isFilled)
+				if (this.IsFilled)
 				{
 					return;
 				}
 
 				// consolidate and make filled
-				this.subNodes = null;
-				this.isFilled = true;
+				this.DestroySubNodes();
+				this.IsFilled = true;
 				return;
 			}
 
-			if (this.SizePowerOfTwo == 0)
+			if (this.sizePowerOfTwo == 0)
 			{
 				throw new Exception("Size mismatch!");
 			}
 
-			bool checkSubnodesForConsolidation;
-			var subNode = this.GetOrCreateSubNode(position, out checkSubnodesForConsolidation);
+			var subNode = this.GetOrCreateSubNode(position);
 			subNode.SetFilledPosition(position, sizePowerOfTwo);
-
-			if (checkSubnodesForConsolidation)
-			{
-				this.TryConsolidateOnSet();
-			}
+			this.TryConsolidateOnSet();
 		}
 
 		private void TryConsolidateOnReset()
 		{
 			// it doesn't make sense calling this method for filled node as it's already "consolidated"
-			Debug.Assert(!this.isFilled);
+			Debug.Assert(!this.IsFilled);
 
 			// check if all the nodes are not filled now
 			var isCanConsolidate = true;
-			for (byte i = 0; i < 4; i++)
+			for (byte subNodeIndex = 0; subNodeIndex < 4; subNodeIndex++)
 			{
-				var subNode = this.subNodes[i];
+				var subNode = this.GetSubNode((SubNodeIndex)subNodeIndex);
 				if (subNode == null)
 				{
 					continue;
 				}
 
-				if (subNode.subNodes == null
-				    && !subNode.isFilled)
+				if (!subNode.IsFilled
+				    && !subNode.HasSubNodes)
 				{
 					// destroy subnode because it's not used anymore
-					this.subNodes[i] = null;
+					this.DestroySubNode((SubNodeIndex)subNodeIndex);
 				}
 				else
 				{
@@ -439,7 +454,7 @@
 			if (isCanConsolidate)
 			{
 				// all nodes are not filled! we can merge them
-				this.subNodes = null;
+				this.DestroySubNodes();
 			}
 		}
 
@@ -449,19 +464,19 @@
 		private void TryConsolidateOnSet()
 		{
 			// check if all the nodes are filled now
-			for (byte i = 0; i < 4; i++)
+			for (byte subNodeIndex = 0; subNodeIndex < 4; subNodeIndex++)
 			{
-				var n = this.subNodes[i];
+				var n = this.GetSubNode((SubNodeIndex)subNodeIndex);
 				if (n == null
-				    || !n.isFilled)
+				    || !n.IsFilled)
 				{
 					return;
 				}
 			}
 
 			// all nodes are filled! we can merge them
-			this.subNodes = null;
-			this.isFilled = true;
+			this.DestroySubNodes();
+			this.IsFilled = true;
 		}
 
 		public struct QuadTreeNodeSnapshot
