@@ -10,10 +10,6 @@
 
 	#endregion
 
-	#region
-
-	#endregion
-
 	/// <summary>
 	/// Spatial/sparse quad tree implementation for C#.
 	/// This data structure optimizes storage of big condensed filled areas.
@@ -33,27 +29,45 @@
 
 		public readonly Vector2Int Position;
 
-		public readonly ushort Size;
+		public readonly byte SizePowerOfTwo;
 
 		/// <summary>
-		/// Determines if the node itself is filled or not. If node contains any subnodes it mush not be filled.
+		/// Determines if the node itself is filled or not. If node contains any subnodes it must not be filled.
 		/// </summary>
 		private bool isFilled;
 
 		private QuadTreeNode[] subNodes;
 
 		/// <param name="position">QuadTreeNode start position</param>
-		/// <param name="size">Please ensure that the size is a power-of-two number!</param>
+		/// <param name="size">Size (will be rounded up to power of two; for example: 50->64, 200->256, 500->512, etc)</param>
 		public QuadTreeNode(Vector2Int position, ushort size)
 		{
+			if (size == 0)
+			{
+				throw new ArgumentOutOfRangeException(nameof(size), "Size must be > 0");
+			}
+
 			this.Position = position;
-			this.Size = size;
+			var canvasSizeRoundedUp = RoundUpToPowerOfTwo(size);
+			// calculate what power of two is it (take logarithm with base=2)
+			var sizePowerOfTwo = (byte)Math.Log(canvasSizeRoundedUp, 2);
+			this.SizePowerOfTwo = sizePowerOfTwo;
+		}
+
+		/// <param name="position">QuadTreeNode start position</param>
+		/// <param name="sizePowerOfTwo">Size as power of two</param>
+		private QuadTreeNode(Vector2Int position, byte sizePowerOfTwo)
+		{
+			this.Position = position;
+			this.SizePowerOfTwo = sizePowerOfTwo;
 		}
 
 		/// <summary>
 		/// Returns true if the node is completely filled.
 		/// </summary>
 		public bool IsFilled => this.isFilled;
+
+		public ushort Size => (ushort)(1 << this.SizePowerOfTwo);
 
 		/// <summary>
 		/// Gets sub-nodes array - please note that QuadTreeNode uses lazy initialization,
@@ -71,7 +85,7 @@
 				}
 
 				var result = 0;
-				for (var index = 0; index < this.subNodes.Length; index++)
+				for (var index = 0; index < 4; index++)
 				{
 					var subNode = this.subNodes[index];
 					if (subNode == null)
@@ -99,7 +113,7 @@
 					return;
 				}
 
-				if (this.Size == 1)
+				if (this.SizePowerOfTwo == 0)
 				{
 					// single-cell quad tree node
 					list.Add(this.Position);
@@ -128,13 +142,30 @@
 
 		public IEnumerator<Vector2Int> GetEnumerator()
 		{
-			// we will not actually enumerate as it's very memory consuming (high overhead due to creation enumerators)
+			// we will not actually enumerate as it's very memory consuming (high overhead due to creation of enumerators)
 			// instead we will create a new list and fill all stored positions there recursively
 
 			// TODO: it's better to use higher initial list capacity to avoid resizing of the inner array
 			var list = new List<Vector2Int>(capacity: 100);
 			this.AddStoredPositions(list);
 			return list.GetEnumerator();
+		}
+
+		public bool IsPositionFilled(Vector2Int position)
+		{
+			Debug.Assert(position.X >= this.Position.X);
+			Debug.Assert(position.Y >= this.Position.Y);
+			Debug.Assert(position.X < this.Position.X + this.Size);
+			Debug.Assert(position.Y < this.Position.Y + this.Size);
+
+			if (this.subNodes == null)
+			{
+				return this.isFilled;
+			}
+
+			var subNodeIndex = this.CalculateNodeIndex(position);
+			var subNode = this.subNodes[subNodeIndex];
+			return subNode != null && subNode.IsPositionFilled(position);
 		}
 
 		public void Load(IReadOnlyList<QuadTreeNodeSnapshot> snapshots)
@@ -147,7 +178,7 @@
 
 		public void ResetFilledPosition(Vector2Int position)
 		{
-			if (this.Size == 1)
+			if (this.SizePowerOfTwo == 0)
 			{
 				Debug.Assert(this.Position == position);
 				this.isFilled = false;
@@ -215,7 +246,7 @@
 				return;
 			}
 
-			if (this.Size == 1)
+			if (this.SizePowerOfTwo == 0)
 			{
 				Debug.Assert(this.Position == position);
 				this.isFilled = true;
@@ -235,6 +266,20 @@
 		IEnumerator IEnumerable.GetEnumerator()
 		{
 			return this.GetEnumerator();
+		}
+
+		/// Round up to the next highest power of 2
+		/// http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
+		private static int RoundUpToPowerOfTwo(int v)
+		{
+			v--;
+			v |= v >> 1;
+			v |= v >> 2;
+			v |= v >> 4;
+			v |= v >> 8;
+			v |= v >> 16;
+			v++;
+			return v;
 		}
 
 		private byte CalculateNodeIndex(Vector2Int position)
@@ -271,33 +316,30 @@
 			var y = this.Position.Y;
 
 			var subSize = (ushort)(this.Size / 2);
+			var subSizePowerOfTwo = (byte)(this.SizePowerOfTwo - 1);
 
 			switch (subNodeIndex)
 			{
 				case IndexBottomLeft:
-					return new QuadTreeNode(new Vector2Int(x, y), subSize);
+					return new QuadTreeNode(new Vector2Int(x, y), subSizePowerOfTwo);
 
 				case IndexBottomRight:
-					return new QuadTreeNode(new Vector2Int(x + subSize, y), subSize);
+					return new QuadTreeNode(new Vector2Int(x + subSize, y), subSizePowerOfTwo);
 
 				case IndexTopLeft:
-					return new QuadTreeNode(new Vector2Int(x, y + subSize), subSize);
+					return new QuadTreeNode(new Vector2Int(x, y + subSize), subSizePowerOfTwo);
 
 				case IndexTopRight:
-					return new QuadTreeNode(new Vector2Int(x + subSize, y + subSize), subSize);
+					return new QuadTreeNode(new Vector2Int(x + subSize, y + subSize), subSizePowerOfTwo);
 
 				default:
 					throw new ArgumentOutOfRangeException();
 			}
 		}
 
-		// when all the subnodes are "filled" they must be consolidated into a single node (this node).</param>
-		/// <summary>
-		/// </summary>
-		/// <param name="position"></param>
 		/// <param name="checkSubnodesForConsolidation">
 		/// Optimization: this flag determines if we need to check subnodes for consolidation:
-		/// <returns></returns>
+		/// </param>
 		[MethodImpl(MethodImplOptions.AggressiveInlining)]
 		private QuadTreeNode GetOrCreateSubNode(Vector2Int position, out bool checkSubnodesForConsolidation)
 		{
@@ -347,7 +389,7 @@
 				return;
 			}
 
-			if (this.Size == 1)
+			if (this.SizePowerOfTwo == 0)
 			{
 				throw new Exception("Size mismatch!");
 			}
@@ -397,6 +439,9 @@
 			}
 		}
 
+		/// <summary>
+		/// When all the subnodes are "filled" they must be consolidated.
+		/// </summary>
 		private void TryConsolidateOnSet()
 		{
 			// check if all the nodes are filled now
@@ -404,7 +449,7 @@
 			{
 				var n = this.subNodes[i];
 				if (n == null
-					|| !n.isFilled)
+				    || !n.isFilled)
 				{
 					return;
 				}
@@ -435,7 +480,9 @@
 			public override bool Equals(object obj)
 			{
 				if (ReferenceEquals(null, obj))
+				{
 					return false;
+				}
 
 				return obj is QuadTreeNodeSnapshot && this.Equals((QuadTreeNodeSnapshot)obj);
 			}

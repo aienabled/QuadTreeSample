@@ -2,6 +2,7 @@
 {
 	#region
 
+	using System;
 	using System.Collections.Generic;
 	using System.Windows;
 	using System.Windows.Controls;
@@ -165,10 +166,10 @@
 
 		private bool IsInside(Vector2Int point)
 		{
-			return point.X >= 0 
-				&& point.Y >= 0 
-				&& point.X < CanvasSize 
-				&& point.Y < CanvasSize;
+			return point.X >= 0
+			       && point.Y >= 0
+			       && point.X < CanvasSize
+			       && point.Y < CanvasSize;
 		}
 
 		private void KeyDownHandler(object sender, KeyEventArgs e)
