@@ -70,7 +70,7 @@
 			[MethodImpl(MethodImplOptions.AggressiveInlining)]
 			get
 			{
-				return !this.IsFilled
+				return !this.IsNodeFilled
 				       && (this.subNodeBottomLeft != null
 				           || this.subNodeBottomRight != null
 				           || this.subNodeTopLeft != null
@@ -81,7 +81,7 @@
 		/// <summary>
 		/// Returns true if the node is completely filled. If the node is filled, it cannot contain nodes.
 		/// </summary>
-		public bool IsFilled { get; private set; }
+		public bool IsNodeFilled { get; private set; }
 
 		public ushort Size => (ushort)(1 << this.sizePowerOfTwo);
 
@@ -115,7 +115,7 @@
 				return;
 			}
 
-			if (this.IsFilled)
+			if (this.IsNodeFilled)
 			{
 				// filled node cannot have subnodes
 				// calculate and return all the positions stored in this node
@@ -141,7 +141,7 @@
 
 		public IEnumerator<Vector2Int> GetEnumerator()
 		{
-			// Цe will not actually enumerate as it's very memory consuming (high overhead due to creation of enumerators).
+			// We will not actually enumerate as it's very memory consuming (high overhead due to creation of enumerators).
 			// Instead we will create a new list and fill all the stored positions there recursively.
 
 			// TODO: it's better to use higher initial list capacity to avoid resizing of the inner array
@@ -182,7 +182,7 @@
 
 			if (!this.HasSubNodes)
 			{
-				return this.IsFilled;
+				return this.IsNodeFilled;
 			}
 
 			var subNodeIndex = this.CalculateNodeIndex(position);
@@ -206,24 +206,24 @@
 			if (this.sizePowerOfTwo == 0)
 			{
 				Debug.Assert(this.Position == position);
-				this.IsFilled = false;
+				this.IsNodeFilled = false;
 				return;
 			}
 
 			if (!this.HasSubNodes)
 			{
-				if (!this.IsFilled)
+				if (!this.IsNodeFilled)
 				{
 					// no subnodes exists and this node is not filled, so nothing to reset
 					return;
 				}
 
 				// need to split this filled node on the filled subnodes
-				this.IsFilled = false;
+				this.IsNodeFilled = false;
 				for (byte index = 0; index < 4; index++)
 				{
 					var node = this.CreateAndSetNode((SubNodeIndex)index);
-					node.IsFilled = true;
+					node.IsNodeFilled = true;
 				}
 			}
 
@@ -249,7 +249,7 @@
 
 		public void Save(IList<QuadTreeNodeSnapshot> snapshots)
 		{
-			if (this.IsFilled)
+			if (this.IsNodeFilled)
 			{
 				snapshots.Add(new QuadTreeNodeSnapshot(this.Position, this.sizePowerOfTwo));
 			}
@@ -264,7 +264,7 @@
 
 		public void SetFilledPosition(Vector2Int position)
 		{
-			if (this.IsFilled)
+			if (this.IsNodeFilled)
 			{
 				return;
 			}
@@ -272,7 +272,7 @@
 			if (this.sizePowerOfTwo == 0)
 			{
 				Debug.Assert(this.Position == position);
-				this.IsFilled = true;
+				this.IsNodeFilled = true;
 				return;
 			}
 
@@ -392,9 +392,55 @@
 			return subNode;
 		}
 
+		private void ResetFilledPosition(Vector2Int position, byte sizePowerOfTwo)
+		{
+			if (sizePowerOfTwo > this.sizePowerOfTwo)
+			{
+				throw new Exception(
+					"Size exceeded - this quadtree node is lower size than required: size (power of two) is "
+					+ this.sizePowerOfTwo + " and set filled position size is " + sizePowerOfTwo);
+			}
+
+			if (this.sizePowerOfTwo == sizePowerOfTwo)
+			{
+				Debug.Assert(this.Position == position);
+				this.IsNodeFilled = false;
+				return;
+			}
+
+			if (!this.HasSubNodes)
+			{
+				if (!this.IsNodeFilled)
+				{
+					// no subnodes exists and this node is not filled, so nothing to reset
+					return;
+				}
+
+				// need to split this filled node on the filled subnodes
+				this.IsNodeFilled = false;
+				for (byte index = 0; index < 4; index++)
+				{
+					var node = this.CreateAndSetNode((SubNodeIndex)index);
+					node.IsNodeFilled = true;
+				}
+			}
+
+			// find subnode
+			var subNodeIndex = this.CalculateNodeIndex(position);
+			var subNode = this.GetSubNode(subNodeIndex);
+			if (subNode == null)
+			{
+				// not subnode exists - nothing to reset
+				return;
+			}
+
+			subNode.ResetFilledPosition(position, sizePowerOfTwo);
+			this.TryConsolidateOnReset();
+		}
+
 		private void SetFilledPosition(Vector2Int position, byte sizePowerOfTwo)
 		{
-			if (this.IsFilled)
+			if (this.IsNodeFilled)
 			{
 				return;
 			}
@@ -402,14 +448,14 @@
 			if (this.sizePowerOfTwo == sizePowerOfTwo)
 			{
 				Debug.Assert(this.Position == position);
-				if (this.IsFilled)
+				if (this.IsNodeFilled)
 				{
 					return;
 				}
 
 				// consolidate and make filled
 				this.DestroySubNodes();
-				this.IsFilled = true;
+				this.IsNodeFilled = true;
 				return;
 			}
 
@@ -426,7 +472,7 @@
 		private void TryConsolidateOnReset()
 		{
 			// it doesn't make sense calling this method for filled node as it's already "consolidated"
-			Debug.Assert(!this.IsFilled);
+			Debug.Assert(!this.IsNodeFilled);
 
 			// check if all the nodes are not filled now
 			var isCanConsolidate = true;
@@ -438,7 +484,7 @@
 					continue;
 				}
 
-				if (!subNode.IsFilled
+				if (!subNode.IsNodeFilled
 				    && !subNode.HasSubNodes)
 				{
 					// destroy subnode because it's not used anymore
@@ -468,7 +514,7 @@
 			{
 				var n = this.GetSubNode((SubNodeIndex)subNodeIndex);
 				if (n == null
-				    || !n.IsFilled)
+				    || !n.IsNodeFilled)
 				{
 					return;
 				}
@@ -476,7 +522,7 @@
 
 			// all nodes are filled! we can merge them
 			this.DestroySubNodes();
-			this.IsFilled = true;
+			this.IsNodeFilled = true;
 		}
 
 		public struct QuadTreeNodeSnapshot
